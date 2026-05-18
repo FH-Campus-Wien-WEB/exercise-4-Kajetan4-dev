@@ -25,7 +25,7 @@ function updateGenres() {
     return;
   }
 
-  fetch("/genres")
+  fetch("/genres",{ credentials: 'same-origin' })
     .then(response => {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return response.json();
@@ -64,7 +64,8 @@ function loadMovies(genre) {
     url.searchParams.set("genre", genre);
   }
 
-  fetch(url)
+ 
+  fetch(url, { credentials: 'same-origin' })
     .then(response => {
       removeMovies();
       const mainElement = document.querySelector("main");
@@ -84,12 +85,16 @@ function loadMovies(genre) {
 }
 
 function addMovie(imdbID) {
-  fetch(`/movies/${imdbID}`, { method: 'PUT' })
+  fetch(`/movies/${imdbID}`, { method: 'PUT', credentials: 'same-origin' })
     .then(response => {
       if (response.status === 201) {
         // Task 2.2: Make sure to remove the added movie from the search results to avoid
         // giving the user the option to add it again.
-    
+        const searchItem = document.getElementById(`search-item-${imdbID}`);
+        if (searchItem) {
+          searchItem.remove();
+        }
+
         loadMovies();
         updateGenres();
       } else if (response.status === 200) {
@@ -105,7 +110,7 @@ function addMovie(imdbID) {
 }
 
 function deleteMovie(imdbID) {
-  fetch(`/movies/${imdbID}`, { method: 'DELETE' })
+  fetch(`/movies/${imdbID}`, { method: 'DELETE', credentials: 'same-origin' })
     .then(response => {
       if (response.ok) {
         const article = document.getElementById(imdbID);
@@ -124,7 +129,8 @@ function deleteMovie(imdbID) {
 }
 
 function searchMovies(query) {
-  fetch(`/search?query=${encodeURIComponent(query)}`)
+  // Add credentials option to include the session cookie
+  fetch(`/search?query=${encodeURIComponent(query)}`, { credentials: 'same-origin' })
     .then(response => {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return response.json();
@@ -136,6 +142,34 @@ function searchMovies(query) {
       // Task 2.2: Render the results returned from the server. Make sure to
       // include an "Add" button for each result that calls `addMovie(imdbID)` when clicked.
       // There is a second part to this task, in `addMovie`
+
+      if (!results || results.length === 0) {
+        new ElementBuilder("p")
+          .text(messages.noResultsFound || "Keine Ergebnisse gefunden.")
+          .appendTo(resultsDiv);
+        return;
+      }
+
+      // Create a list container for results
+      const listContainer = new ElementBuilder("ul").appendTo(resultsDiv);
+
+      results.forEach(movie => {
+        // Create a unique wrapper ID for each search entry so we can target it for deletion later
+        const itemWrapper = new ElementBuilder("li")
+          .id(`search-item-${movie.imdbID}`);
+
+        // Add text text content showing Title and Year (if Year exists)
+        const yearText = movie.Year ? ` (${movie.Year})` : '';
+        const infoSpan = new ElementBuilder("span")
+          .text(`${movie.Title}${yearText} `);
+
+        // Build the "Add" button
+        const addButton = new ButtonBuilder("Hinzufügen")
+          .onclick(() => addMovie(movie.imdbID));
+
+        // Assemble the row and append to the list
+        itemWrapper.append(infoSpan).append(addButton).appendTo(listContainer);
+      });
 
     })
     .catch(error => {
@@ -166,6 +200,29 @@ window.onload = function () {
     const greetingElement = document.getElementById('userGreeting');
     if (currentSession) {
       // Task 1.2: Render a user greeting to `#userGreeting` 
+
+
+      const { firstName, lastName, loginTime } = currentSession;
+
+      // Convert the server ISO timestamp into a JavaScript Date object
+      const date = new Date(loginTime);
+
+      // Format date part: "19. April 2026"
+      const formattedDate = date.toLocaleDateString('de-DE', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      });
+
+      // Format time part: "21:15"
+      const formattedTime = date.toLocaleTimeString('de-DE', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+
+      // Combine into the requested format
+      greetingElement.textContent = `Hi ${firstName} ${lastName}, du hast dich am ${formattedDate} um ${formattedTime} angemeldet.`;
+
       // using `firstName`, `lastName`, and the server-provided
       // login timestamp.
     } else {
@@ -213,9 +270,33 @@ window.onload = function () {
     const formData = new FormData(e.target);
 
     // Task 1.1: Implement the login submit flow to call `POST /login` 
-    // with username and password, handle errors, save the response 
-    // into `currentSession`, then call `updateUI()` and `loadMovies()`.
+const data = Object.fromEntries(formData.entries());
 
+    fetch("/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      credentials: 'same-origin', // Ensure session cookies are accepted
+      body: JSON.stringify(data)  // FIXED: Changed payload to data
+    })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(messages.loginFailed);
+        }
+        return response.json();
+      })
+      .then(sessionData => {
+        currentSession = sessionData;
+        document.getElementById('loginDialog').close();
+
+        updateUI();
+        loadMovies();
+      })
+      .catch(error => {
+        console.error('Login request failed:', error);
+        alert(messages.loginFailed);
+      });
   });
 
   document.getElementById('cancelLogin').addEventListener('click', () => {
